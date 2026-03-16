@@ -1,0 +1,82 @@
+[project]
+name = "http-server"
+version = "0.1.0"
+description = "An asynchronous HTTP server built from scratch — a Python learning project"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+# ──────────────────────────────────────────────────────────────
+# Build system — tells Python where to find the source code.
+# In JS terms, this is like the "main" / "exports" field in package.json.
+# We use the "src layout" pattern: source code lives in src/http_server/
+# so it's separate from config files, tests, etc.
+# ──────────────────────────────────────────────────────────────
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/http_server"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "ruff>=0.15.6",
+]
+
+# ──────────────────────────────────────────────────────────────
+# Ruff — an extremely fast Python linter & formatter (written in Rust).
+# Think of it as ESLint + Prettier combined, but for Python.
+# Docs: https://docs.astral.sh/ruff/
+# ──────────────────────────────────────────────────────────────
+[tool.ruff]
+# Target Python 3.12 so Ruff understands which syntax is valid.
+target-version = "py312"
+# Max line length — 99 is a comfortable middle-ground (PEP 8 says 79, most
+# modern projects use 88–120).
+line-length = 99
+
+[tool.ruff.lint]
+# Rule sets to enable (these are like ESLint rule groups):
+#   E  = pycodestyle errors   (basic style — missing whitespace, etc.)
+#   F  = pyflakes              (unused imports, undefined names — like no-unused-vars)
+#   W  = pycodestyle warnings  (trailing whitespace, blank lines, etc.)
+#   I  = isort                 (import sorting — like eslint-plugin-import)
+#   N  = pep8-naming           (naming conventions — snake_case functions, PascalCase classes)
+#   UP = pyupgrade             (suggests modern Python syntax — like auto-fixing old patterns)
+#   B  = flake8-bugbear        (catches common bugs & design issues)
+#   A  = flake8-builtins       (warns when you shadow built-in names like `list` or `id`)
+#   SIM = flake8-simplify      (suggests simpler code)
+#   RUF = Ruff-specific rules
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM", "RUF"]
+
+[tool.ruff.format]
+# Use double quotes for strings (Python convention — unlike JS's single-quote preference).
+quote-style = "double"
+# Indent with 4 spaces (Python standard — unlike JS's typical 2-space indent).
+indent-style = "space"
+
+# ──────────────────────────────────────────────────────────────
+# Mypy — static type checker for Python.
+# Python is dynamically typed, but you can add type hints (like TypeScript
+# annotations) and mypy checks them at "compile time" (it doesn't run the code).
+# Docs: https://mypy.readthedocs.io/
+# ──────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.12"
+# "strict" turns on ALL strictness flags at once — similar to TypeScript's "strict: true".
+strict = true
+# Warn about code after a return/raise that can never be reached (like -Wunreachable-code in C++).
+warn_unreachable = true
+
+# ──────────────────────────────────────────────────────────────
+# Pytest — the standard Python test runner (like Jest/Mocha in JS).
+# Docs: https://docs.pytest.org/
+# ──────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+# Tell pytest where to find tests. "tests" is the directory.
+testpaths = ["tests"]
+# NOTE: When we add pytest-asyncio later, we'll add:  asyncio_mode = "auto"
+# That lets us write `async def test_...()` directly without decorators.
