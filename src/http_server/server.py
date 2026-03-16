@@ -73,8 +73,79 @@
 
 import asyncio  # Python's built-in async I/O library (like Node's event loop)
 
-from http_server.request import parse_request  # our HTTP request parser
+from http_server.request import HttpRequest, parse_request  # our HTTP request parser
 from http_server.response import HttpResponse, HttpStatus  # our HTTP response builder
+from http_server.router import Router  # our URL router
+
+# ──────────────────────────────────────────────────────────────
+# Route handlers — one function per URL path
+# ──────────────────────────────────────────────────────────────
+#
+# Each handler is a plain function that takes an HttpRequest and returns
+# an HttpResponse.  This is similar to Express route handlers:
+#
+#   JS (Express):
+#     app.get("/", (req, res) => { res.send("Hello!"); });
+#
+#   Python (ours):
+#     def home(request: HttpRequest) -> HttpResponse:
+#         return HttpResponse(body="Hello!")
+#
+# The key difference: Express handlers receive BOTH req and res and mutate
+# res in-place. Our handlers receive req and RETURN a new response object.
+# This is a more "functional" style — no mutation, just input → output.
+# ──────────────────────────────────────────────────────────────
+
+
+def home(request: HttpRequest) -> HttpResponse:
+    """Handler for GET / — the home page."""
+    return HttpResponse(
+        status=HttpStatus.OK,
+        headers={"Content-Type": "text/plain"},
+        body="Hello, World!",
+    )
+
+
+def about(request: HttpRequest) -> HttpResponse:
+    """Handler for GET /about — an about page."""
+    return HttpResponse(
+        status=HttpStatus.OK,
+        headers={"Content-Type": "text/plain"},
+        body="This is an async HTTP server built from scratch in Python.",
+    )
+
+
+def health(request: HttpRequest) -> HttpResponse:
+    """Handler for GET /health — a health-check endpoint."""
+    # Health-check endpoints are common in production. Load balancers
+    # and monitoring tools hit this to verify the server is alive.
+    # JS equivalent: `app.get("/health", (req, res) => res.json({ status: "ok" }));`
+    return HttpResponse(
+        status=HttpStatus.OK,
+        headers={"Content-Type": "application/json"},
+        body='{"status": "ok"}',
+    )
+
+
+# ──────────────────────────────────────────────────────────────
+# Create the router and register routes
+# ──────────────────────────────────────────────────────────────
+#
+# This code runs ONCE when the module is first imported.
+# Module-level code in Python is like top-level code in a JS file —
+# it executes when the file is loaded.
+#
+#   JS equivalent:
+#     const router = new Router();
+#     router.get("/", home);
+#     router.get("/about", about);
+#     export { router };
+# ──────────────────────────────────────────────────────────────
+
+router = Router()
+router.add_route("GET", "/", home)
+router.add_route("GET", "/about", about)
+router.add_route("GET", "/health", health)
 
 
 async def handle_client(
@@ -147,20 +218,16 @@ async def handle_client(
     for key, value in request.headers.items():
         print(f"   {key}: {value}")
 
-    # ── 5. Build a response using our HttpResponse builder ───
-    # Instead of assembling raw strings, we use a structured object.
-    # This is like going from:
-    #   res.writeHead(200); res.end("Hello");
-    # to Express's:
-    #   res.status(200).type("text/plain").send("Hello, World!");
+    # ── 5. Route the request to the correct handler ──────────
+    # Instead of returning the same response for every request, we ask
+    # the router to find the right handler based on the request's method
+    # and path.  If no route matches, the router returns a 404 automatically.
     #
-    # Content-Length and Connection headers are set automatically
-    # by HttpResponse.to_bytes() — we don't have to manage them.
-    response = HttpResponse(
-        status=HttpStatus.OK,
-        headers={"Content-Type": "text/plain"},
-        body="Hello, World!",
-    )
+    # JS Express equivalent:
+    #   // Express does this internally — when a request arrives, it walks
+    #   // through its route table and calls the first matching handler.
+    #   // We just made that mechanism explicit.
+    response = router.resolve(request)
 
     # ── 6. Send the response back to the client ──────────────
     # `response.to_bytes()` serializes the HttpResponse into raw HTTP bytes.
