@@ -1,7 +1,6 @@
 # http-server
 
-An asynchronous HTTP server built from scratch in Python 3.12 — a learning
-project for developers coming from JavaScript / C++.
+An asynchronous HTTP server built from scratch in Python 3.12.
 
 ---
 
