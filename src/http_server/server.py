@@ -72,10 +72,32 @@
 # ──────────────────────────────────────────────────────────────
 
 import asyncio  # Python's built-in async I/O library (like Node's event loop)
+from pathlib import Path  # object-oriented file paths (like Node's `path` module)
 
 from http_server.request import HttpRequest, parse_request  # our HTTP request parser
 from http_server.response import HttpResponse, HttpStatus  # our HTTP response builder
 from http_server.router import Router  # our URL router
+from http_server.static import serve_static  # our static file server
+
+# ──────────────────────────────────────────────────────────────
+# Static file directory
+# ──────────────────────────────────────────────────────────────
+#
+# `Path(__file__)` gives us the path to THIS file (server.py).
+# `.parent` goes up one level (the http_server package dir).
+# `.parent.parent` goes up again (the src dir).
+# `.parent.parent.parent` reaches the project root.
+#
+# Then `/ "public"` appends the "public" folder.
+#
+# JS equivalent:
+#   const STATIC_DIR = path.join(__dirname, "..", "..", "..", "public");
+#
+# NOTE: `__file__` is a special Python variable that holds the path
+# to the current source file — like `__filename` in Node (or
+# `import.meta.url` in ES modules).
+# ──────────────────────────────────────────────────────────────
+STATIC_DIR = Path(__file__).parent.parent.parent / "public"
 
 # ──────────────────────────────────────────────────────────────
 # Route handlers — one function per URL path
@@ -98,12 +120,10 @@ from http_server.router import Router  # our URL router
 
 
 def home(request: HttpRequest) -> HttpResponse:
-    """Handler for GET / — the home page."""
-    return HttpResponse(
-        status=HttpStatus.OK,
-        headers={"Content-Type": "text/plain"},
-        body="Hello, World!",
-    )
+    """Handler for GET / — serve the static index.html page."""
+    # Instead of a plain-text response, serve the HTML file from public/.
+    # This delegates to the static file server we just built.
+    return serve_static(request, STATIC_DIR)
 
 
 def about(request: HttpRequest) -> HttpResponse:
@@ -219,15 +239,25 @@ async def handle_client(
         print(f"   {key}: {value}")
 
     # ── 5. Route the request to the correct handler ──────────
-    # Instead of returning the same response for every request, we ask
-    # the router to find the right handler based on the request's method
-    # and path.  If no route matches, the router returns a 404 automatically.
+    # First, try the explicit routes (/, /about, /health).
+    # If no route matches, fall back to static file serving.
     #
-    # JS Express equivalent:
-    #   // Express does this internally — when a request arrives, it walks
-    #   // through its route table and calls the first matching handler.
-    #   // We just made that mechanism explicit.
+    # This is exactly how Express works:
+    #   app.get("/about", aboutHandler);        // explicit routes first
+    #   app.use(express.static("public"));       // then static files
+    #   // If neither matches, Express sends 404.
+    #
+    # We check if the router found a handler. If the response is 404,
+    # we try serving a static file before giving up.
     response = router.resolve(request)
+
+    # If the router returned 404, try static files as a fallback.
+    # This lets URLs like /style.css serve files from public/style.css.
+    if response.status == HttpStatus.NOT_FOUND:
+        static_response = serve_static(request, STATIC_DIR)
+        # Only use the static response if the file was actually found.
+        if static_response.status != HttpStatus.NOT_FOUND:
+            response = static_response
 
     # ── 6. Send the response back to the client ──────────────
     # `response.to_bytes()` serializes the HttpResponse into raw HTTP bytes.

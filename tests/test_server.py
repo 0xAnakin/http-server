@@ -91,8 +91,10 @@ def test_server_responds_with_hello_world() -> None:
         #   JS:     response.includes("200 OK")
         #   Python: "200 OK" in response
         assert "HTTP/1.1 200 OK" in response
-        assert "Hello, World!" in response
-        assert "Content-Type: text/plain" in response
+        # The home route now serves public/index.html (static file),
+        # so we check for HTML content instead of "Hello, World!".
+        assert "Welcome to http-server" in response
+        assert "Content-Type: text/html" in response
 
         # ── 6. Clean up ─────────────────────────────────────
         writer.close()
