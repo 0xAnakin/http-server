@@ -74,6 +74,12 @@
 import asyncio  # Python's built-in async I/O library (like Node's event loop)
 from pathlib import Path  # object-oriented file paths (like Node's `path` module)
 
+# NEW — middleware (runs before/after every request, like Express's app.use())
+from http_server.middleware import (
+    apply_middleware,
+    error_middleware,
+    logging_middleware,
+)
 from http_server.request import HttpRequest, parse_request  # our HTTP request parser
 from http_server.response import HttpResponse, HttpStatus  # our HTTP response builder
 from http_server.router import Router  # our URL router
@@ -168,6 +174,61 @@ router.add_route("GET", "/about", about)
 router.add_route("GET", "/health", health)
 
 
+# ──────────────────────────────────────────────────────────────
+# Build the request-handling pipeline (handler + middleware)
+# ──────────────────────────────────────────────────────────────
+#
+# The pipeline wraps our core handler (routing + static fallback) with
+# middleware layers.  This is like calling `app.use()` in Express:
+#
+#   JS (Express):
+#     app.use(morgan("dev"));           // logging
+#     app.use(errorHandler);            // error catching
+#     app.get("/about", aboutHandler);  // routes
+#
+#   Python (ours):
+#     pipeline = apply_middleware(core_handler, [logging, error])
+#
+# The order matters:
+#   1. logging_middleware — runs FIRST (outermost layer), logs request/response
+#   2. error_middleware   — runs SECOND, catches exceptions from inner layers
+#   3. core_handler       — runs LAST (innermost), does routing + static files
+#
+# The "onion model" in action:
+#   request  ─►  logging  ─►  error_catch  ─►  core_handler
+#   response ◄─  logging  ◄─  error_catch  ◄─  core_handler
+# ──────────────────────────────────────────────────────────────
+
+
+def _core_handler(request: HttpRequest) -> HttpResponse:
+    """
+    The innermost handler: routing + static file fallback.
+
+    This was previously done inline in handle_client.  Now it's a
+    standalone function so we can wrap it with middleware.
+    """
+    # Try explicit routes first.
+    response = router.resolve(request)
+
+    # If the router returned 404, try static files as a fallback.
+    if response.status == HttpStatus.NOT_FOUND:
+        static_response = serve_static(request, STATIC_DIR)
+        if static_response.status != HttpStatus.NOT_FOUND:
+            response = static_response
+
+    return response
+
+
+# Build the pipeline: wrap _core_handler with middlewares.
+# After this, calling `pipeline(request)` will:
+#   1. Run logging_middleware (logs → GET /about)
+#   2. Run error_middleware (try/except around everything inside)
+#   3. Run _core_handler (router + static fallback)
+#   4. Return back through error_middleware (no-op if no error)
+#   5. Return back through logging_middleware (logs ← 200 (1.2ms))
+pipeline = apply_middleware(_core_handler, [logging_middleware, error_middleware])
+
+
 async def handle_client(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -238,26 +299,21 @@ async def handle_client(
     for key, value in request.headers.items():
         print(f"   {key}: {value}")
 
-    # ── 5. Route the request to the correct handler ──────────
-    # First, try the explicit routes (/, /about, /health).
-    # If no route matches, fall back to static file serving.
+    # ── 5. Run the request through the middleware pipeline ──
+    # The pipeline wraps our core handler (routing + static fallback)
+    # with middleware layers (logging, error handling).
     #
-    # This is exactly how Express works:
-    #   app.get("/about", aboutHandler);        // explicit routes first
-    #   app.use(express.static("public"));       // then static files
-    #   // If neither matches, Express sends 404.
+    # This single call does:
+    #   1. logging_middleware logs the incoming request
+    #   2. error_middleware sets up a try/except safety net
+    #   3. Core handler routes the request or serves a static file
+    #   4. error_middleware passes the response through (or catches errors)
+    #   5. logging_middleware logs the response status and timing
     #
-    # We check if the router found a handler. If the response is 404,
-    # we try serving a static file before giving up.
-    response = router.resolve(request)
-
-    # If the router returned 404, try static files as a fallback.
-    # This lets URLs like /style.css serve files from public/style.css.
-    if response.status == HttpStatus.NOT_FOUND:
-        static_response = serve_static(request, STATIC_DIR)
-        # Only use the static response if the file was actually found.
-        if static_response.status != HttpStatus.NOT_FOUND:
-            response = static_response
+    # JS Express equivalent:
+    #   // Express does this internally — it runs through the middleware
+    #   // stack, then the route handler, and back out through the stack.
+    response = pipeline(request)
 
     # ── 6. Send the response back to the client ──────────────
     # `response.to_bytes()` serializes the HttpResponse into raw HTTP bytes.
